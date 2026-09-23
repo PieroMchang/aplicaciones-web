@@ -1,0 +1,287 @@
+.env
+
+Fragmento de código
+VITE_TVMAZE_API_URL="https://api.tvmaze.com"
+VITE_EPISODES_ENDPOINT_PATH="/shows/1/episodes"
+VITE_PRIME_UI_LICENSE_KEY="tu-licencia-aqui"
+src/locales/en.json
+
+JSON
+{
+  "toolbar": {
+    "title": "Episodes Store API Shows"
+  },
+  "view": {
+    "title": "Store Episodes"
+  },
+  "episode": {
+    "season": "Season",
+    "number": "Episode",
+    "watch": "Watch",
+    "summary": "Summary"
+  },
+  "footer": {
+    "copyright": "Copyright © 2024 TV Maze, inc. All rights reserved.",
+    "developer": "Developed by [TU_CODIGO_AQUI] - Piero Francisco Montes Chang"
+  }
+}
+src/locales/es.json
+
+JSON
+{
+  "toolbar": {
+    "title": "Shows API de la Tienda de Episodios"
+  },
+  "view": {
+    "title": "Episodios de la Tienda"
+  },
+  "episode": {
+    "season": "Temporada",
+    "number": "Episodio",
+    "watch": "Ver",
+    "summary": "Resumen"
+  },
+  "footer": {
+    "copyright": "Copyright © 2024 TV Maze, inc. Todos los derechos reservados.",
+    "developer": "Desarrollado por [TU_CODIGO_AQUI] - Piero Francisco Montes Chang"
+  }
+}
+src/shows/domain/model/episode.entity.js
+
+JavaScript
+/**
+ * Domain entity representing a TV Show Episode.
+ * @summary Encapsulates the core attributes of an episode as required by the TVMaze API.
+ * @author Piero Francisco Montes Chang
+ */
+export class Episode {
+    constructor({ id = 0, name = '', season = 0, number = 0, summary = '', url = '', image = null }) {
+        this.id = id;
+        this.name = name;
+        this.season = season;
+        this.number = number;
+        // Limpiamos etiquetas HTML del resumen si la API las trae
+        this.summary = summary ? summary.replace(/<\/?[^>]+(>|$)/g, "") : "No summary available.";
+        this.url = url;
+        // Obtenemos la url de la imagen desde image.medium
+        this.image = image && image.medium ? image.medium : 'https://placehold.co/600x400?text=No+Image';
+    }
+}
+src/shows/infrastructure/shows.service.js
+
+JavaScript
+import axios from "axios";
+
+/**
+ * Infrastructure adapter for TVMaze HTTP endpoints.
+ * @summary Isolates external transport concerns from the application layers.
+ * @author Piero Francisco Montes Chang
+ */
+const tvMazeApiUrl = import.meta.env.VITE_TVMAZE_API_URL;
+const episodesEndpoint = import.meta.env.VITE_EPISODES_ENDPOINT_PATH;
+
+const http = axios.create({
+    baseURL: tvMazeApiUrl
+});
+
+export class ShowsService {
+    /**
+     * Retrieves episodes from the TVMaze API.
+     * @returns {Promise<import('axios').AxiosResponse>}
+     */
+    getEpisodes = () => http.get(`${episodesEndpoint}`);
+}
+src/shows/infrastructure/episode.assembler.js
+
+JavaScript
+import { Episode } from "@/shows/domain/model/episode.entity.js";
+
+/**
+ * Infrastructure service that maps episode data from API responses into Domain Entities.
+ * @summary Acts as a Data Mapper between the API JSON and the Episode domain entity.
+ * @author Piero Francisco Montes Chang
+ */
+export class EpisodeAssembler {
+    /**
+     * Maps an array of API objects to Episode entities.
+     * @param {Array} responseData - The raw data array from the Axios response.
+     * @returns {Episode[]} An array of Episode domain entities.
+     */
+    toEntitiesFromResponse(responseData) {
+        if (!Array.isArray(responseData)) return [];
+        return responseData.map(episode => new Episode(episode));
+    }
+}
+src/shows/presentation/components/episode-card.component.vue
+
+Fragmento de código
+<script setup>
+import { useI18n } from "vue-i18n";
+import { Episode } from "@/shows/domain/model/episode.entity.js";
+
+/**
+ * Presentation component for rendering a single episode card.
+ * @summary Displays episode details using PrimeVue Card component.
+ * @author Piero Francisco Montes Chang
+ */
+const { t } = useI18n();
+const { episode } = defineProps({ episode: { type: Episode, required: true } });
+</script>
+
+<template>
+  <pv-card class="m-2 shadow-2" :aria-label="'Episode card for ' + episode.name">
+    <template #header>
+      <img :alt="episode.name" :src="episode.image" class="w-full border-round-top" aria-hidden="true" />
+    </template>
+    
+    <template #title>
+      <h3 class="m-0 text-xl" :aria-label="'Episode name: ' + episode.name">{{ episode.name }}</h3>
+    </template>
+    
+    <template #subtitle>
+      <div class="flex gap-3 text-sm text-color-secondary mt-2">
+        <span aria-label="Season">
+          <i class="pi pi-calendar mr-1"></i> {{ t('episode.season') }} {{ episode.season }}
+        </span>
+        <span aria-label="Episode number">
+          <i class="pi pi-video mr-1"></i> {{ t('episode.number') }} {{ episode.number }}
+        </span>
+      </div>
+    </template>
+    
+    <template #content>
+      <p class="text-sm mt-3 line-height-3" :aria-label="t('episode.summary')">
+        {{ episode.summary }}
+      </p>
+    </template>
+    
+    <template #footer>
+      <pv-button 
+        as="a" 
+        :href="episode.url" 
+        target="_blank" 
+        :label="t('episode.watch')" 
+        icon="pi pi-external-link" 
+        class="w-full mt-2"
+        :aria-label="'Watch episode ' + episode.name + ' on TVMaze'" />
+    </template>
+  </pv-card>
+</template>
+src/shows/presentation/components/episode-list.component.vue
+
+Fragmento de código
+<script setup>
+import { ref, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
+import EpisodeCard from './episode-card.component.vue';
+import { ShowsService } from '@/shows/infrastructure/shows.service.js';
+import { EpisodeAssembler } from '@/shows/infrastructure/episode.assembler.js';
+
+/**
+ * Presentation component for rendering the list of episodes.
+ * @summary Fetches data from ShowsService and maps it to EpisodeCard components.
+ * @author Piero Francisco Montes Chang
+ */
+const { t } = useI18n();
+const episodes = ref([]);
+const showsService = new ShowsService();
+const episodeAssembler = new EpisodeAssembler();
+
+onMounted(async () => {
+  try {
+    const response = await showsService.getEpisodes();
+    episodes.value = episodeAssembler.toEntitiesFromResponse(response.data);
+  } catch (error) {
+    console.error("Error fetching episodes:", error);
+  }
+});
+</script>
+
+<template>
+  <div class="p-4">
+    <h2 class="text-center mb-4 text-3xl font-bold" aria-label="Section title">{{ t('view.title') }}</h2>
+    <div class="grid">
+      <div class="col-12 md:col-6 lg:col-4 xl:col-3" v-for="episode in episodes" :key="episode.id">
+        <episode-card :episode="episode" />
+      </div>
+    </div>
+  </div>
+</template>
+src/public/presentation/components/toolbar.component.vue
+
+Fragmento de código
+<script setup>
+import { useI18n } from 'vue-i18n';
+
+/**
+ * Presentation component for the application toolbar.
+ * @summary Renders the top navigation bar.
+ * @author Piero Francisco Montes Chang
+ */
+const { t } = useI18n();
+</script>
+
+<template>
+  <pv-toolbar class="bg-primary text-white border-none border-noround shadow-3" role="banner" aria-label="Main Toolbar">
+    <template #start>
+      <h1 class="m-0 text-2xl font-bold">
+        <i class="pi pi-desktop mr-2" aria-hidden="true"></i>
+        {{ t('toolbar.title') }}
+      </h1>
+    </template>
+  </pv-toolbar>
+</template>
+src/public/presentation/components/footer-content.component.vue
+
+Fragmento de código
+<script setup>
+import { useI18n } from 'vue-i18n';
+
+/**
+ * Presentation component for the application footer.
+ * @summary Renders copyright and developer information.
+ * @author Piero Francisco Montes Chang
+ */
+const { t } = useI18n();
+</script>
+
+<template>
+  <footer class="bg-gray-900 text-white p-4 text-center mt-auto" role="contentinfo" aria-label="Footer">
+    <p class="m-0 mb-2">{{ t('footer.copyright') }}</p>
+    <p class="m-0 text-gray-400 text-sm">{{ t('footer.developer') }}</p>
+  </footer>
+</template>
+src/app.vue
+
+Fragmento de código
+<script setup>
+import ToolbarComponent from '@/public/presentation/components/toolbar.component.vue';
+import FooterContentComponent from '@/public/presentation/components/footer-content.component.vue';
+import EpisodeListComponent from '@/shows/presentation/components/episode-list.component.vue';
+
+/**
+ * Main application shell.
+ * @author Piero Francisco Montes Chang
+ */
+</script>
+
+<template>
+  <div class="min-h-screen flex flex-column surface-ground">
+    <toolbar-component />
+    
+    <main class="flex-grow-1 container mx-auto" role="main">
+      <episode-list-component />
+    </main>
+
+    <footer-content-component />
+  </div>
+</template>
+
+<style>
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family);
+}
+</style>
+¡Mucha suerte! Tienes todo armado para sacar ese 20.
